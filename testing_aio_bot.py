@@ -6,7 +6,7 @@ import sys
 from os import getenv
 
 from dotenv import load_dotenv
-from aiogram import Bot, Dispatcher, types, html
+from aiogram import Bot, Dispatcher, types
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.filters import CommandStart, StateFilter
@@ -25,10 +25,17 @@ TELEGRAM_TOKEN = getenv('TELEGRAM_TOKEN')
 dp = Dispatcher()
 
 
-# Определение состояний FMS
 class UserDataForm(StatesGroup):
+    """Определение состояний FMS при старте при запуске бота."""
+
     name = State()
     age = State()
+
+
+class ImageUploadForm(StatesGroup):
+    """Определение состояний FMS при получении изображения."""
+
+    image = State()
 
 
 @dp.message(CommandStart())
@@ -49,8 +56,9 @@ async def command_start_handler(
             )]
         ]
     )
+    user_name = message.from_user.full_name if message.from_user else "User"
     await message.answer(
-        f'Hello, {html.bold(message.from_user.full_name)}! \n'
+        f'Hello, {user_name}! \n'
         'Выбери свой вариант:',
         reply_markup=keybord
         )
@@ -112,15 +120,33 @@ async def process_age(
 
     # Отправляем данные юзеру
     await message.answer(
-        f'Круто, {name}! Тебе {age} лет!'
+        f'Круто, {name}! {age} лучший возраст!'
     )
 
     # Выходим из контекстного состояния FMS
     await state.clear()
 
 
+# Не правильно обрабатываю изображения.
+
+# @dp.message(
+#         StateFilter(ImageUploadForm.image)
+# )
+# async def process_image(messege: types.Message):
+#     """Возвращение юзеру размеров, отправленного им изображения."""
+
+#     photo = messege.photo[-1]
+#     width = photo.width
+#     height = photo.height
+
+#     await messege.answer(
+#         f'Размер вашего изображения: {width} x {height} пикселей.'
+#     )
+#     await ImageUploadForm.image.finish()
+
+
 @dp.message()
-async def echo_handler(message):
+async def echo_handler(message: types.Message):
 
     """Возвращение юзеру его же сообщения."""
     try:
@@ -128,7 +154,7 @@ async def echo_handler(message):
         await message.send_copy(chat_id=message.chat.id)
     except TypeError:
         # Отправляем юзеру, если формат сообщения не поддаётся обработке.
-        await message.answer("Хитро!")
+        await message.answer('Хитро!')
 
 
 async def main():
@@ -142,7 +168,7 @@ async def main():
     await dp.start_polling(bot)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     # Фиксируем логи в терминале
     logging.basicConfig(
         level=logging.INFO,
