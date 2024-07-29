@@ -6,7 +6,7 @@ import sys
 from os import getenv
 
 from dotenv import load_dotenv
-from aiogram import Bot, Dispatcher, types
+from aiogram import Bot, Dispatcher, F, types
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.filters import CommandStart, StateFilter
@@ -127,34 +127,15 @@ async def process_age(
     await state.clear()
 
 
-# Не правильно обрабатываю изображения.
-
-# @dp.message(
-#         StateFilter(ImageUploadForm.image)
-# )
-# async def process_image(messege: types.Message):
-#     """Возвращение юзеру размеров, отправленного им изображения."""
-
-#     photo = messege.photo[-1]
-#     width = photo.width
-#     height = photo.height
-
-#     await messege.answer(
-#         f'Размер вашего изображения: {width} x {height} пикселей.'
-#     )
-#     await ImageUploadForm.image.finish()
-
-
-@dp.message()
-async def echo_handler(message: types.Message):
-
-    """Возвращение юзеру его же сообщения."""
-    try:
-        # Отправляем копию сообщения обратно юзеру
-        await message.send_copy(chat_id=message.chat.id)
-    except TypeError:
-        # Отправляем юзеру, если формат сообщения не поддаётся обработке.
-        await message.answer('Хитро!')
+@dp.message(F.content_type == types.ContentType.PHOTO)
+async def process_image(message: types.Message):
+    """Возвращение юзеру размеров, отправленного им изображения."""
+    photo = message.photo[-1]
+    width = photo.width
+    height = photo.height
+    await message.answer(
+        f'Размер вашего изображения: {width} x {height} пикселей.'
+    )
 
 
 async def main():
