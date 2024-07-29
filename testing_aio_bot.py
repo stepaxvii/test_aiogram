@@ -138,6 +138,18 @@ async def process_image(message: types.Message):
     )
 
 
+@dp.message()
+async def echo_handler(message: types.Message):
+    """Возвращение юзеру его же сообщения."""
+
+    try:
+        # Отправляем копию сообщения обратно юзеру
+        await message.send_copy(chat_id=message.chat.id)
+    except TypeError:
+        # Отправляем юзеру, если формат сообщения не поддаётся обработке.
+        await message.answer("Хитро!")
+
+
 async def main():
     # Создаём экземпляр класса Bot
     bot = Bot(
