@@ -252,7 +252,12 @@ async def main():
     )
 
     # Запускаем обработку обновлений
-    await dp.start_polling(bot)
+    try:
+        await dp.start_polling(bot)
+    except Exception as error:
+        logging.error(
+            f'Произошла ошибка: {error}'
+        )
 
 
 if __name__ == '__main__':
