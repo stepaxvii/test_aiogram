@@ -1,5 +1,6 @@
 """Основной файл тестового задания."""
 import aiohttp
+import aioschedule
 import asyncio
 import logging
 import sys
@@ -20,14 +21,14 @@ from sqlalchemy.orm import sessionmaker
 load_dotenv()
 
 # Из окружения извлекаем необходимые токены и ссылки
-TELEGRAM_TOKEN = getenv('TELEGRAM_TOKEN')
+TELEGRAM_TOKEN = getenv('TELEGRAM_SPARE_TOKEN')
 OWM_API_KEY = getenv('OWM_API_KEY')
 
 # Создаём экземпляр класса Dispatcher для обработки обновлений
 dp = Dispatcher()
 
 # Настраиваем базы данных
-DATABASE_URL = "sqlite:///d:/Dev/testing_aio/users.db"
+DATABASE_URL = "sqlite:///users.db"
 Base = declarative_base()
 engine = create_engine(DATABASE_URL)
 Session = sessionmaker(bind=engine)
@@ -35,7 +36,7 @@ Session = sessionmaker(bind=engine)
 
 class User(Base):
     """Модель пользователя."""
-    __tablename__ = 'users'
+    __tablename__ = 'users_table'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, unique=True, nullable=False)
@@ -74,7 +75,6 @@ async def command_start_handler(message: types.Message):
     await message.answer(
         f'Привет, <b>{user_name}</b>!\n'
         'Выбери свой вариант:',
-        parse_mode_key='HTML',
         reply_markup=keyboard
         )
 
@@ -234,30 +234,48 @@ async def response_weather(message: types.Message, state: FSMContext):
             )
 
 
-@dp.message()
-async def echo_handler(message: types.Message):
-    """Возвращение юзеру его же сообщения."""
+async def send_notification(bot: Bot):
+    """Функция подготовки к отправке уведомлений."""
 
-    try:
-        await message.send_copy(chat_id=message.chat.id)
-    except TypeError:
-        await message.answer("Хитро!")
+    session = Session()
+    users = session.query(User).all()
+    if users:
+        for user in users:
+            try:
+                await bot.send_message(
+                    chat_id=user.user_id,
+                    text="Доброе утро. Хорошего дня."
+                )
+            except Exception as error:
+                logging.error(
+                    'Не удалось отправить сообщение пользователю '
+                    f'{user.user_id}: {error}'
+                )
+    session.close()
+
+
+async def scheduler(bot: Bot):
+    """Отправка напоминаний по заданному времени."""
+    aioschedule.every().day.at("21:23").do(send_notification, bot)
+    while True:
+        await aioschedule.run_pending()
+        await asyncio.sleep(1)
 
 
 async def main():
-    # Создаём экземпляр класса Bot
     bot = Bot(
         token=TELEGRAM_TOKEN,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML)
     )
 
-    # Запускаем обработку обновлений
+    # Запускаем обработку обновлений и планировщик
     try:
-        await dp.start_polling(bot)
-    except Exception as error:
-        logging.error(
-            f'Произошла ошибка: {error}'
+        await asyncio.gather(
+            dp.start_polling(bot),
+            scheduler(bot)
         )
+    except Exception as error:
+        logging.error(f'Произошла ошибка: {error}')
 
 
 if __name__ == '__main__':

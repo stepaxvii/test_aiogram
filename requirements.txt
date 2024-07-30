@@ -2,3 +2,4 @@ python-dotenv==0.20.0
 requests==2.26.0
 aiogram
 sqlalchemy
+aioschedule
