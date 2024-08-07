@@ -1,5 +1,4 @@
 """Основной файл тестового задания."""
-import aiohttp
 import aioschedule
 import asyncio
 import logging
@@ -14,21 +13,31 @@ from aiogram.filters import Command, CommandStart, StateFilter
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
+from aiohttp import ClientError, ClientSession, web
 from sqlalchemy import create_engine, Column, Integer, String
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import declarative_base, sessionmaker
 
 load_dotenv()
 
 # Из окружения извлекаем необходимые токены и ссылки
 TELEGRAM_TOKEN = getenv('TELEGRAM_SPARE_TOKEN')
 OWM_API_KEY = getenv('OWM_API_KEY')
+WEBHOOK_HOST = getenv('WEBHOOK_HOST')
+WEBHOOK_PATH = f'/{TELEGRAM_TOKEN}'
+WEBHOOK_URL = f'{WEBHOOK_HOST}{WEBHOOK_PATH}'
 
-# Создаём экземпляр класса Dispatcher для обработки обновлений
+
+# Настраиваем экземпляры бота, диспечера и приложения
+bot = Bot(
+    token=TELEGRAM_TOKEN,
+    default=DefaultBotProperties(parse_mode=ParseMode.HTML)
+)
 dp = Dispatcher()
+app = web.Application()
+
 
 # Настраиваем базы данных
-DATABASE_URL = "sqlite:///users.db"
+DATABASE_URL = "sqlite:///d:/Dev/testing_aio/users.db"
 Base = declarative_base()
 engine = create_engine(DATABASE_URL)
 Session = sessionmaker(bind=engine)
@@ -85,22 +94,25 @@ async def callback_process(
     state: FSMContext
 ):
     """Обработка callback-оф и переход к тестированию FMS."""
-
-    selected_option = callback_query.data
-    if selected_option == 'sel 1':
-        await callback_query.message.answer(
-            'Вы выбрали вариант 1'
-        )
-    elif selected_option == 'sel 2':
-        await callback_query.message.answer(
-            'Вы выбрали вариант 2.'
-            '\nПереходим к тестированию FMS'
-        )
-        time.sleep(2)
-        await state.set_state(UserDataForm.name)
-        await callback_query.message.answer(
-            'Как тебя зовут?'
-        )
+    try:
+        selected_option = callback_query.data
+        if selected_option == 'sel 1':
+            await callback_query.message.answer(
+                'Вы выбрали вариант 1'
+            )
+        elif selected_option == 'sel 2':
+            await callback_query.message.answer(
+                'Вы выбрали вариант 2.'
+                '\nПереходим к тестированию FMS'
+            )
+            time.sleep(2)
+            await state.set_state(UserDataForm.name)
+            await callback_query.message.answer(
+                'Как тебя зовут?'
+            )
+    except Exception as error:
+        logging.error(f'Ошибка {error}')
+        await state.clear()
 
 
 @dp.message(StateFilter(UserDataForm.name))
@@ -109,10 +121,13 @@ async def process_name(
     state: FSMContext
 ):
     """Обработчик состояния UserDataForm.name."""
-
-    await state.update_data(name=message.text)
-    await state.set_state(UserDataForm.age)
-    await message.answer('Сколько тебе лет?')
+    try:
+        await state.update_data(name=message.text)
+        await state.set_state(UserDataForm.age)
+        await message.answer('Сколько тебе лет?')
+    except Exception as error:
+        logging.error(f'Ошибка {error}')
+        await state.clear()
 
 
 @dp.message(StateFilter(UserDataForm.age))
@@ -121,72 +136,85 @@ async def process_age_and_data_output(
     state: FSMContext
 ):
     """Обработчик состояния UserDataForm.age и вывод данных."""
+    try:
+        await state.update_data(age=message.text)
 
-    await state.update_data(age=message.text)
-
-    user_data = await state.get_data()
-    name, age = user_data.get('name'), int(user_data.get('age'))
-    session = Session()
-    new_user = User(user_id=message.from_user.id, name=name, age=age)
-    session.add(new_user)
-    session.commit()
-    session.close()
-    await message.answer(
-        f'Круто, {name}! {age} лучший возраст!\n'
-        'Отправив команду /users, можно получить список пользователей из БД)'
-    )
-    await state.clear()
+        user_data = await state.get_data()
+        name, age = user_data.get('name'), int(user_data.get('age'))
+        session = Session()
+        new_user = User(user_id=message.from_user.id, name=name, age=age)
+        session.add(new_user)
+        session.commit()
+        session.close()
+        await message.answer(
+            f'Круто, {name}! {age} лучший возраст!\n'
+            'Отправив команду /users, можно получить список пользователей из БД)'
+        )
+        await state.clear()
+    except Exception as error:
+        logging.error(f'Ошибка {error}')
+        await state.clear()
 
 
 @dp.message(Command('users'))
 async def command_users_handler(message: types.Message):
     """Обработка команды /users для вывода всех пользователей."""
-    session = Session()
-    users = session.query(User).all()
-    session.close()
+    try:
+        session = Session()
+        users = session.query(User).all()
+        session.close()
 
-    if users:
-        user_list = "\n".join(
-            [
-                f'ID: {user.user_id}, '
-                f'Имя: {user.name}, '
-                f'Возраст: {user.age}' for user in users
-            ]
-        )
-        await message.answer(f'Список пользователей:\n{user_list}')
-    else:
-        await message.answer('Пользователи не найдены в базе данных.')
+        if users:
+            user_list = "\n".join(
+                [
+                    f'ID: {user.user_id}, '
+                    f'Имя: {user.name}, '
+                    f'Возраст: {user.age}' for user in users
+                ]
+            )
+            await message.answer(f'Список пользователей:\n{user_list}')
+        else:
+            await message.answer('Пользователи не найдены в базе данных.')
+    except Exception as error:
+        logging.error(f'Ошибка {error}')
 
 
 @dp.message(F.content_type == types.ContentType.PHOTO)
 async def process_image(message: types.Message):
     """Возвращение юзеру размеров, отправленного им изображения."""
-
-    photo = message.photo[-1]
-    width = photo.width
-    height = photo.height
-    await message.answer(
-        f'Размер вашего изображения: {width} x {height} пикселей.'
-    )
+    try:
+        photo = message.photo[-1]
+        width = photo.width
+        height = photo.height
+        await message.answer(
+            f'Размер вашего изображения: {width} x {height} пикселей.'
+        )
+    except Exception as error:
+        logging.error(f'Ошибка {error}')
 
 
 @dp.message(Command('help'))
 async def command_help_handler(message: types.Message):
     """Обработка команды help."""
-
-    await message.answer(
-        'Обработали запрос команды /help.'
-    )
+    try:
+        await message.answer(
+            'Обработали запрос команды /help.'
+        )
+    except Exception as error:
+        logging.error(f'Ошибка {error}')
 
 
 @dp.message(Command('echo'))
 async def command_echo_handler(message: types.Message):
     """Обработка команды echo."""
 
-    await message.answer(
-        'Реализовал обработчик неизвестных запросов методом echo.'
-        'Если бот не знает, что делать с сообщением - просто вернёт такое же.'
-    )
+    try:
+        await message.answer(
+            'Реализовал обработчик неизвестных запросов методом echo.'
+            'Если бот не знает, что делать с сообщением - просто вернёт такое же.'
+        )
+    except Exception as error:
+        logging.error(f'Ошибка {error}')
 
 
 @dp.message(Command('weather'))
@@ -196,17 +224,20 @@ async def command_weather_handler(
 ):
     """Обработка команды weather."""
 
-    await state.set_state(WeatherForm.city)
-    await message.answer(
-        'Погоду какого города ты хочешь узнать?'
-    )
+    try:
+        await state.set_state(WeatherForm.city)
+        await message.answer(
+            'Погоду какого города ты хочешь узнать?'
+        )
+    except Exception as error:
+        logging.error(f'Ошибка {error}')
 
 
 @dp.message(StateFilter(WeatherForm.city))
 async def response_weather(message: types.Message, state: FSMContext):
     """Получаем погоду по запрошенному городу, либо запрашиваем повторно."""
     city = message.text
-    async with aiohttp.ClientSession() as session:
+    async with ClientSession() as session:
         url = (
             'http://api.openweathermap.org'
             f'/data/2.5/weather?q={city}&appid={OWM_API_KEY}&units=metric'
@@ -222,7 +253,7 @@ async def response_weather(message: types.Message, state: FSMContext):
                     f'Температура - {int(temp)}°C, влажность - {humidity}%'
                 )
                 await state.clear()
-        except aiohttp.ClientError:
+        except ClientError:
             await message.answer(
                 'Ошибка на стороне сервера. Повтори попытку позже'
                 )
@@ -243,8 +274,8 @@ async def send_notification(bot: Bot):
         for user in users:
             try:
                 await bot.send_message(
-                    chat_id=user.user_id,
-                    text="Доброе утро. Хорошего дня."
+                    chat_id=str(user.user_id),
+                    text="<b>Уведомление по времени</b>"
                 )
             except Exception as error:
                 logging.error(
@@ -256,27 +287,36 @@ async def send_notification(bot: Bot):
 
 async def scheduler(bot: Bot):
     """Отправка напоминаний по заданному времени."""
-    aioschedule.every().day.at("21:23").do(send_notification, bot)
+    aioschedule.every().day.at("22:41").do(send_notification, bot)
     while True:
         await aioschedule.run_pending()
         await asyncio.sleep(1)
 
 
-async def main():
-    bot = Bot(
-        token=TELEGRAM_TOKEN,
-        default=DefaultBotProperties(parse_mode=ParseMode.HTML)
-    )
+async def set_webhook():
+    await bot.set_webhook(WEBHOOK_URL)
 
-    # Запускаем обработку обновлений и планировщик
-    try:
-        await asyncio.gather(
-            dp.start_polling(bot),
-            scheduler(bot)
-        )
-    except Exception as error:
-        logging.error(f'Произошла ошибка: {error}')
 
+async def on_startup(_):
+    await set_webhook()
+
+
+async def handle_webhook(request):
+    url = str(request.url)
+    index = url.rfind('/')
+    token = url[index + 1:]
+
+    if token == TELEGRAM_TOKEN:
+        request_data = await request.json()
+        update = types.Update(**request_data)
+        await dp._process_update(bot, update)
+
+        return web.Response()
+
+    else:
+        return web.Response(status=403)
+
+app.router.add_post(WEBHOOK_PATH, handle_webhook)
 
 if __name__ == '__main__':
     # Фиксируем логи в терминале
@@ -284,4 +324,10 @@ if __name__ == '__main__':
         level=logging.INFO,
         stream=sys.stdout,
     )
-    asyncio.run(main())
+    app.on_startup.append(on_startup)
+
+    web.run_app(
+        app=app,
+        host='0.0.0.0',
+        port=8000
+    )
